@@ -1,9 +1,13 @@
 #include "glwid.h"
-#include <gl/GLU.h>
-#include <thread>
+
 #include <QImage>
 #include <QMutex>
 #include <QDebug>
+
+#include <thread>
+
+#include <gl/GLU.h>
+
 
 #define PI 3.1415926
 
@@ -17,17 +21,17 @@ int cy = 0;
 
 GLfloat  distance = 0.0;
 
-GLuint  texturesArr;
+GLuint  textures_arr;
 
-int cap_H = 1;//必须大于0,且cap_H应等于cap_W
-int cap_W = 1;//绘制球体时，每次增加的角度
+//绘制球体时，每次增加的角度
+int cap_h = 1;//必须大于0,且cap_h应等于cap_w
+int cap_w = 1;
 
-float* verticals;
-float* UV_TEX_VERTEX;
+float* vertexs;     //球面顶点
+float* tex_coord;   //纹理坐标
 
-#define BALL_VIEW 0
 
-#define MAXSIZE 10
+#define FRAME_MAX_SIZE 10
 
 typedef struct Vid_Frame {
     AVFrame *frame;
@@ -44,7 +48,7 @@ typedef struct Vid_Frame {
 } Vid_Frame;
 
 typedef struct FrameQueue {
-    Vid_Frame queue[MAXSIZE];
+    Vid_Frame queue[FRAME_MAX_SIZE];
     int front;
     int rear;
     int size;
@@ -68,7 +72,7 @@ FrameQueue frame_queue;
 
 void InitQueue(FrameQueue *q) {
     int i;
-    for (i = 0; i < MAXSIZE; i++) {
+    for (i = 0; i < FRAME_MAX_SIZE; i++) {
         if (!(q->queue[i].frame = av_frame_alloc()))
             return;
         q->queue[i].buffer = NULL;
@@ -86,8 +90,8 @@ void DeQueue(FrameQueue *q)
 
 void getPointMatrix(GLfloat radius)
 {
-    verticals = new float[(180 / cap_H) * (360 / cap_W) * 6 * 3];
-    UV_TEX_VERTEX = new float[(180 / cap_H) * (360 / cap_W) * 6 * 2];
+    vertexs = new float[(180 / cap_h) * (360 / cap_w) * 6 * 3];
+    tex_coord = new float[(180 / cap_h) * (360 / cap_w) * 6 * 2];
 
     float x = 0;
     float y = 0;
@@ -96,54 +100,74 @@ void getPointMatrix(GLfloat radius)
     int index = 0;
     int index1 = 0;
     float r = radius;//球体半径
-    double d = cap_H * PI / 180;//每次递增的弧度
-    for (int i = 0; i < 180; i += cap_H) {
+    double d = cap_h * PI / 180;//每次递增的弧度
+    for (int i = 0; i < 180; i += cap_h) {
         double d1 = i * PI / 180;
-        for (int j = 0; j < 360; j += cap_W) {
+        for (int j = 0; j < 360; j += cap_w) {
             //获得球体上切分的超小片矩形的顶点坐标（两个三角形组成，所以有六点顶点）
             double d2 = j * PI / 180;
-            verticals[index++] = (float)(x + r * sin(d1 + d) * cos(d2 + d));
-            verticals[index++] = (float)(y + r * cos(d1 + d));
-            verticals[index++] = (float)(z + r * sin(d1 + d) * sin(d2 + d));
+            vertexs[index++] = (float)(x + r * sin(d1 + d) * cos(d2 + d));
+            vertexs[index++] = (float)(y + r * cos(d1 + d));
+            vertexs[index++] = (float)(z + r * sin(d1 + d) * sin(d2 + d));
             //获得球体上切分的超小片三角形的纹理坐标
-            UV_TEX_VERTEX[index1++] = (j + cap_W) * 1.0f / 360;
-            UV_TEX_VERTEX[index1++] = (i + cap_H) * 1.0f / 180;
+            tex_coord[index1++] = (j + cap_w) * 1.0f / 360;
+            tex_coord[index1++] = (i + cap_h) * 1.0f / 180;
 
-            verticals[index++] = (float)(x + r * sin(d1) * cos(d2));
-            verticals[index++] = (float)(y + r * cos(d1));
-            verticals[index++] = (float)(z + r * sin(d1) * sin(d2));
+            vertexs[index++] = (float)(x + r * sin(d1) * cos(d2));
+            vertexs[index++] = (float)(y + r * cos(d1));
+            vertexs[index++] = (float)(z + r * sin(d1) * sin(d2));
 
-            UV_TEX_VERTEX[index1++] = j * 1.0f / 360;
-            UV_TEX_VERTEX[index1++] = i * 1.0f / 180;
+            tex_coord[index1++] = j * 1.0f / 360;
+            tex_coord[index1++] = i * 1.0f / 180;
 
-            verticals[index++] = (float)(x + r * sin(d1) * cos(d2 + d));
-            verticals[index++] = (float)(y + r * cos(d1));
-            verticals[index++] = (float)(z + r * sin(d1) * sin(d2 + d));
+            vertexs[index++] = (float)(x + r * sin(d1) * cos(d2 + d));
+            vertexs[index++] = (float)(y + r * cos(d1));
+            vertexs[index++] = (float)(z + r * sin(d1) * sin(d2 + d));
 
-            UV_TEX_VERTEX[index1++] = (j + cap_W) * 1.0f / 360;
-            UV_TEX_VERTEX[index1++] = i * 1.0f / 180;
+            tex_coord[index1++] = (j + cap_w) * 1.0f / 360;
+            tex_coord[index1++] = i * 1.0f / 180;
 
-            verticals[index++] = (float)(x + r * sin(d1 + d) * cos(d2 + d));
-            verticals[index++] = (float)(y + r * cos(d1 + d));
-            verticals[index++] = (float)(z + r * sin(d1 + d) * sin(d2 + d));
+            vertexs[index++] = (float)(x + r * sin(d1 + d) * cos(d2 + d));
+            vertexs[index++] = (float)(y + r * cos(d1 + d));
+            vertexs[index++] = (float)(z + r * sin(d1 + d) * sin(d2 + d));
 
-            UV_TEX_VERTEX[index1++] = (j + cap_W) * 1.0f / 360;
-            UV_TEX_VERTEX[index1++] = (i + cap_H) * 1.0f / 180;
+            tex_coord[index1++] = (j + cap_w) * 1.0f / 360;
+            tex_coord[index1++] = (i + cap_h) * 1.0f / 180;
 
-            verticals[index++] = (float)(x + r * sin(d1 + d) * cos(d2));
-            verticals[index++] = (float)(y + r * cos(d1 + d));
-            verticals[index++] = (float)(z + r * sin(d1 + d) * sin(d2));
+            vertexs[index++] = (float)(x + r * sin(d1 + d) * cos(d2));
+            vertexs[index++] = (float)(y + r * cos(d1 + d));
+            vertexs[index++] = (float)(z + r * sin(d1 + d) * sin(d2));
 
-            UV_TEX_VERTEX[index1++] = j * 1.0f / 360;
-            UV_TEX_VERTEX[index1++] = (i + cap_H) * 1.0f / 180;
+            tex_coord[index1++] = j * 1.0f / 360;
+            tex_coord[index1++] = (i + cap_h) * 1.0f / 180;
 
-            verticals[index++] = (float)(x + r * sin(d1) * cos(d2));
-            verticals[index++] = (float)(y + r * cos(d1));
-            verticals[index++] = (float)(z + r * sin(d1) * sin(d2));
+            vertexs[index++] = (float)(x + r * sin(d1) * cos(d2));
+            vertexs[index++] = (float)(y + r * cos(d1));
+            vertexs[index++] = (float)(z + r * sin(d1) * sin(d2));
 
-            UV_TEX_VERTEX[index1++] = j * 1.0f / 360;
-            UV_TEX_VERTEX[index1++] = i * 1.0f / 180;
+            tex_coord[index1++] = j * 1.0f / 360;
+            tex_coord[index1++] = i * 1.0f / 180;
         }
+    }
+}
+
+
+
+GlWid::GlWid(QWidget *parent)
+    : QOpenGLWidget(parent),
+    is_360_(false),
+    fovy_(120)
+{
+
+
+}
+
+GlWid::~GlWid()
+{
+    is_thread_read_running_ = false;
+    if (thread_read_.joinable())
+    {
+        thread_read_.join();
     }
 }
 
@@ -157,8 +181,9 @@ int GlWid::ThreadRead()
     int				i, videoindex;
     AVCodec			*pCodec;
     AVCodecContext	*pCodecCtx = NULL;
+    struct SwsContext *img_convert_ctx;
 
-//     char filepath[] = "F:\\Downloads\\8k video\\4K_2D.mp4";
+    //     char filepath[] = "F:\\Downloads\\8k video\\4K_2D.mp4";
     char filepath[] = "rtsp://192.168.1.140/preview";
 
     av_register_all();
@@ -207,13 +232,9 @@ int GlWid::ThreadRead()
     AVFrame	*pFrame;
     pFrame = av_frame_alloc();
     int ret, got_picture;
-    
-//     AVPacket *packet = (AVPacket *)av_malloc(sizeof(AVPacket));
+
     AVPacket pkt, *packet = &pkt;
 
-
-
-    struct SwsContext *img_convert_ctx;
 
     int index = 0;
     while (is_thread_read_running_)
@@ -224,7 +245,7 @@ int GlWid::ThreadRead()
             qDebug() << "av_read_frame" << ret;
             break;
         }
-        
+
 
         if (packet->stream_index == videoindex)
         {
@@ -261,8 +282,8 @@ int GlWid::ThreadRead()
                     break;
                 }
 
-            
-                while (frame_queue.size >= MAXSIZE)
+
+                while (frame_queue.size >= FRAME_MAX_SIZE)
                 {
                     printf("size = %d   I'm WAITING ... \n", frame_queue.size);
                     Sleep(10);
@@ -272,7 +293,6 @@ int GlWid::ThreadRead()
                     }
                 }
 
-//                 EnterCriticalSection(&frame_queue.cs);
                 frame_queue.mutex.lock();
 
                 if (!is_thread_read_running_)
@@ -316,43 +336,14 @@ int GlWid::ThreadRead()
                 }
 
                 frame_queue.size++;
-                frame_queue.rear = (frame_queue.rear + 1) % MAXSIZE;
-
-//                 LeaveCriticalSection(&frame_queue.cs);
+                frame_queue.rear = (frame_queue.rear + 1) % FRAME_MAX_SIZE;
                 frame_queue.mutex.unlock();
 
                 this->update();
-
-                //MySaveBmp("f5.bmp", vp->buffer, vp->width, vp->height);
-
-                //int nHeight = vp->height;
-                //int nWidth = vp->width;
-
-                //Mat tmp_mat = Mat::zeros(nHeight, nWidth, CV_32FC3);
-
-                //int k = 0;
-                //for (int i = 0; i < nHeight; i++)
-                //{
-                //	for (int j = 0; j < nWidth; j++)
-                //	{
-                //		tmp_mat.at<Vec3f>(i, j)[0] = vp->buffer[k++] / 255.0f;
-                //		tmp_mat.at<Vec3f>(i, j)[1] = vp->buffer[k++] / 255.0f;
-                //		tmp_mat.at<Vec3f>(i, j)[2] = vp->buffer[k++] / 255.0f;
-                //	}
-                //}
-
-                //imwrite("mat_Image.jpg", tmp_mat);
-
-                //namedWindow("Marc_Antony");
-                //imshow("Marc_Antony", tmp_mat);
-
-                //waitKey(0);
-
             }
         }
 
     }
-
 
 
     avcodec_close(pCodecCtx);
@@ -374,24 +365,6 @@ int GlWid::SetFovy(int fovy)
     return 0;
 }
 
-GlWid::GlWid(QWidget *parent)
-    : QOpenGLWidget(parent),
-    is_360_(false),
-    fovy_(120)
-{
-
-
-}
-
-GlWid::~GlWid()
-{
-    is_thread_read_running_ = false;
-    if (thread_read_.joinable())
-    {
-        thread_read_.join();
-    }
-}
-
 void GlWid::initializeGL()
 {
     initializeOpenGLFunctions();
@@ -399,8 +372,8 @@ void GlWid::initializeGL()
     InitQueue(&frame_queue);
 
 
-    glGenTextures(1, &texturesArr);    //创建纹理
-    glBindTexture(GL_TEXTURE_2D, texturesArr);
+    glGenTextures(1, &textures_arr);    //创建纹理
+    glBindTexture(GL_TEXTURE_2D, textures_arr);
 
 
 //     QImage img;
@@ -464,11 +437,11 @@ void GlWid::paintGL()
     {
         Vid_Frame *vp = &frame_queue.queue[frame_queue.front];
 
-        glBindTexture(GL_TEXTURE_2D, texturesArr);
+        glBindTexture(GL_TEXTURE_2D, textures_arr);
         glTexImage2D(GL_TEXTURE_2D, 0, 3, vp->width, vp->height, 0, GL_BGR_EXT, GL_UNSIGNED_BYTE, vp->buffer);
 
         frame_queue.size--;
-        frame_queue.front = (frame_queue.front + 1) % MAXSIZE;
+        frame_queue.front = (frame_queue.front + 1) % FRAME_MAX_SIZE;
 
         frame_w = vp->width;
         frame_h = vp->height;
@@ -478,7 +451,7 @@ void GlWid::paintGL()
     frame_queue.mutex.unlock();
 
 
-    glBindTexture(GL_TEXTURE_2D, texturesArr);
+    glBindTexture(GL_TEXTURE_2D, textures_arr);
 
 //     QImage img;
 //     img.load("5.png");
@@ -495,11 +468,11 @@ void GlWid::paintGL()
         glEnableClientState(GL_VERTEX_ARRAY);
         glEnableClientState(GL_TEXTURE_COORD_ARRAY);
 
-        glVertexPointer(3, GL_FLOAT, 0, verticals);
-        glTexCoordPointer(2, GL_FLOAT, 0, UV_TEX_VERTEX);
+        glVertexPointer(3, GL_FLOAT, 0, vertexs);
+        glTexCoordPointer(2, GL_FLOAT, 0, tex_coord);
 
         glPushMatrix();
-        glDrawArrays(GL_TRIANGLES, 0, (180 / cap_H) * (360 / cap_W) * 6);
+        glDrawArrays(GL_TRIANGLES, 0, (180 / cap_h) * (360 / cap_w) * 6);
 
         glPopMatrix();
         glDisableClientState(GL_TEXTURE_COORD_ARRAY);
