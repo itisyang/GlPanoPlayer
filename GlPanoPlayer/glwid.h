@@ -55,6 +55,7 @@ protected:
     void wheelEvent(QWheelEvent *event);
 
     bool is_360_;
+    int fovy_;
 
     std::thread thread_read_;
     bool is_thread_read_running_;

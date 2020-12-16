@@ -5,8 +5,6 @@
 #include <QMutex>
 #include <QDebug>
 
-#include <opencv2/opencv.hpp>
-
 #define PI 3.1415926
 
 GLfloat  xangle = 0.0;    //X 旋转量
@@ -50,7 +48,7 @@ typedef struct FrameQueue {
     int front;
     int rear;
     int size;
-//     CRITICAL_SECTION cs;
+
     QMutex mutex;
     FrameQueue()
     {
@@ -60,15 +58,15 @@ typedef struct FrameQueue {
     }
 }FrameQueue;
 
-void initQueue(FrameQueue *q);
-int inQueue(FrameQueue *q, int num);
-int outQueue(FrameQueue *q);
-void deQueue(FrameQueue *q);
+void InitQueue(FrameQueue *q);
+int InQueue(FrameQueue *q, int num);
+int OutQueue(FrameQueue *q);
+void DeQueue(FrameQueue *q);
 
 FrameQueue frame_queue;
 
 
-void initQueue(FrameQueue *q) {
+void InitQueue(FrameQueue *q) {
     int i;
     for (i = 0; i < MAXSIZE; i++) {
         if (!(q->queue[i].frame = av_frame_alloc()))
@@ -79,10 +77,9 @@ void initQueue(FrameQueue *q) {
     q->front = 0;
     q->rear = 0;
     q->size = 0;
-//     InitializeCriticalSection(&q->cs);
 }
 
-void deQueue(FrameQueue *q)
+void DeQueue(FrameQueue *q)
 {
     free(q);
 }
@@ -373,12 +370,14 @@ int GlWid::Set360(bool is_360)
 
 int GlWid::SetFovy(int fovy)
 {
-
+    fovy_ = fovy;
+    return 0;
 }
 
 GlWid::GlWid(QWidget *parent)
     : QOpenGLWidget(parent),
-    is_360_(false)
+    is_360_(false),
+    fovy_(120)
 {
 
 
@@ -397,7 +396,7 @@ void GlWid::initializeGL()
 {
     initializeOpenGLFunctions();
 
-    initQueue(&frame_queue);
+    InitQueue(&frame_queue);
 
 
     glGenTextures(1, &texturesArr);    //创建纹理
@@ -441,7 +440,7 @@ void GlWid::paintGL()
             glViewport(0, 0, (GLsizei)width(), (GLsizei)height());
             glMatrixMode(GL_PROJECTION);
             glLoadIdentity();
-            gluPerspective(120, (GLfloat)width() / height(), 1.0f, 1000.0f);    //设置投影矩阵，角度
+            gluPerspective(fovy_, (GLfloat)width() / height(), 1.0f, 1000.0f);    //设置投影矩阵，角度
             glMatrixMode(GL_MODELVIEW);
             glLoadIdentity();
         }
@@ -539,7 +538,7 @@ void GlWid::resizeGL(int w, int h)
     glLoadIdentity();
     //glOrtho(-250.0, 250, -250.0, 250, -500, 500);
     //glFrustum(-250.0, 250, -250.0, 250, -5, -500);
-    gluPerspective(120, (GLfloat)w / h, 1.0f, 1000.0f);    //设置投影矩阵，角度
+    gluPerspective(fovy_, (GLfloat)w / h, 1.0f, 1000.0f);    //设置投影矩阵，角度
 //     gluPerspective(45, (GLfloat)w / h, 1.0f, 1000.0f);    //设置投影矩阵，角度
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();

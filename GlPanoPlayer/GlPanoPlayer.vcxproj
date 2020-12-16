@@ -43,14 +43,14 @@
     <Import Project="$(QtMsBuild)\qt_defaults.props" />
   </ImportGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
-    <IncludePath>D:\ffmpeg413\include;D:\opencv420_cuda102\include;$(IncludePath)</IncludePath>
-    <LibraryPath>D:\ffmpeg413;D:\opencv420_cuda102\lib;$(LibraryPath)</LibraryPath>
+    <IncludePath>D:\ffmpeg413\include;$(IncludePath)</IncludePath>
+    <LibraryPath>D:\ffmpeg413;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <Link>
-      <AdditionalDependencies>opencv_core420d.lib;opencv_imgcodecs420d.lib;opencv_imgproc420d.lib;avcodec.lib;avfilter.lib;avformat.lib;avutil.lib;postproc.lib;swresample.lib;swscale.lib;GlU32.Lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>avcodec.lib;avfilter.lib;avformat.lib;avutil.lib;postproc.lib;swresample.lib;swscale.lib;GlU32.Lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="QtSettings">
