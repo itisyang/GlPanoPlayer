@@ -5,6 +5,8 @@
 #include <QOpenGLFunctions_4_5_Compatibility> 
 #include <QMouseEvent>
 
+#include <thread>
+
 extern "C"
 {
 #include "libavutil/avstring.h"
@@ -38,8 +40,10 @@ public:
     GlWid(QWidget *parent);
     ~GlWid();
 
-    int ThreadFunc();
+    int ThreadRead();
 
+    int Set360(bool is_360);
+    int SetFovy(int fovy);
 protected:
     void initializeGL();
     void paintGL();
@@ -49,4 +53,9 @@ protected:
     void mouseReleaseEvent(QMouseEvent *event);
     void mouseMoveEvent(QMouseEvent *event);
     void wheelEvent(QWheelEvent *event);
+
+    bool is_360_;
+
+    std::thread thread_read_;
+    bool is_thread_read_running_;
 };

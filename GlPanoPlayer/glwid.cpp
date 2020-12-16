@@ -3,6 +3,7 @@
 #include <thread>
 #include <QImage>
 #include <QMutex>
+#include <QDebug>
 
 #include <opencv2/opencv.hpp>
 
@@ -26,6 +27,7 @@ int cap_W = 1;//绘制球体时，每次增加的角度
 float* verticals;
 float* UV_TEX_VERTEX;
 
+#define BALL_VIEW 0
 
 #define MAXSIZE 10
 
@@ -149,15 +151,18 @@ void getPointMatrix(GLfloat radius)
 }
 
 
-int GlWid::ThreadFunc()
+int GlWid::ThreadRead()
 {
+    is_thread_read_running_ = true;
+
+
     AVFormatContext	*pFormatCtx;
     int				i, videoindex;
     AVCodec			*pCodec;
     AVCodecContext	*pCodecCtx = NULL;
 
 //     char filepath[] = "F:\\Downloads\\8k video\\4K_2D.mp4";
-    char filepath[] = "rtsp://192.168.1.176/preview";
+    char filepath[] = "rtsp://192.168.1.140/preview";
 
     av_register_all();
     avformat_network_init();
@@ -205,19 +210,31 @@ int GlWid::ThreadFunc()
     AVFrame	*pFrame;
     pFrame = av_frame_alloc();
     int ret, got_picture;
-    AVPacket *packet = (AVPacket *)av_malloc(sizeof(AVPacket));
+    
+//     AVPacket *packet = (AVPacket *)av_malloc(sizeof(AVPacket));
+    AVPacket pkt, *packet = &pkt;
 
-    AVFrame *pFrameBGR = NULL;
-    pFrameBGR = av_frame_alloc();
+
 
     struct SwsContext *img_convert_ctx;
 
     int index = 0;
-    while (av_read_frame(pFormatCtx, packet) >= 0)
+    while (is_thread_read_running_)
     {
+        int ret = av_read_frame(pFormatCtx, packet);
+        if (ret < 0)
+        {
+            qDebug() << "av_read_frame" << ret;
+            break;
+        }
+        
+
         if (packet->stream_index == videoindex)
         {
             ret = avcodec_decode_video2(pCodecCtx, pFrame, &got_picture, packet);
+
+            av_packet_unref(packet);
+
             if (ret < 0)
             {
                 printf("Decode Error.（解码错误）\n");
@@ -227,16 +244,44 @@ int GlWid::ThreadFunc()
             {
                 index++;
 
-            flag_wait:
-                if (frame_queue.size >= MAXSIZE)
+
+                //去除FFmpeg警告 "deprecated pixel format used"
+                switch (pFrame->format) {
+                case AV_PIX_FMT_YUVJ420P:
+                    pFrame->format = AV_PIX_FMT_YUV420P;
+                    break;
+                case AV_PIX_FMT_YUVJ422P:
+                    pFrame->format = AV_PIX_FMT_YUV422P;
+                    break;
+                case AV_PIX_FMT_YUVJ444P:
+                    pFrame->format = AV_PIX_FMT_YUV444P;
+                    break;
+                case AV_PIX_FMT_YUVJ440P:
+                    pFrame->format = AV_PIX_FMT_YUV440P;
+                    break;
+                default:
+                    //pixFormat = _videoStream->codec->codec->pix_fmts;
+                    break;
+                }
+
+            
+                while (frame_queue.size >= MAXSIZE)
                 {
                     printf("size = %d   I'm WAITING ... \n", frame_queue.size);
                     Sleep(10);
-                    goto flag_wait;
+                    if (!is_thread_read_running_)
+                    {
+                        break;
+                    }
                 }
 
 //                 EnterCriticalSection(&frame_queue.cs);
                 frame_queue.mutex.lock();
+
+                if (!is_thread_read_running_)
+                {
+                    break;
+                }
 
                 Vid_Frame *vp;
                 vp = &frame_queue.queue[frame_queue.rear];
@@ -253,7 +298,6 @@ int GlWid::ThreadFunc()
                     }
 
                     int iSize = avpicture_get_size(AV_PIX_FMT_BGR24, pFrame->width, pFrame->height);
-                    av_free(vp->buffer);
                     vp->buffer = (uint8_t *)av_mallocz(iSize);
 
                     vp->width = pFrame->width;
@@ -309,8 +353,10 @@ int GlWid::ThreadFunc()
 
             }
         }
-        av_free_packet(packet);
+
     }
+
+
 
     avcodec_close(pCodecCtx);
     avformat_close_input(&pFormatCtx);
@@ -318,8 +364,21 @@ int GlWid::ThreadFunc()
     return 0;
 }
 
+int GlWid::Set360(bool is_360)
+{
+    is_360_ = is_360;
+
+    return 0;
+}
+
+int GlWid::SetFovy(int fovy)
+{
+
+}
+
 GlWid::GlWid(QWidget *parent)
-    : QOpenGLWidget(parent)
+    : QOpenGLWidget(parent),
+    is_360_(false)
 {
 
 
@@ -327,6 +386,11 @@ GlWid::GlWid(QWidget *parent)
 
 GlWid::~GlWid()
 {
+    is_thread_read_running_ = false;
+    if (thread_read_.joinable())
+    {
+        thread_read_.join();
+    }
 }
 
 void GlWid::initializeGL()
@@ -362,8 +426,7 @@ void GlWid::initializeGL()
 
     getPointMatrix(500);
 
-    std::thread t = std::thread(&GlWid::ThreadFunc, this);
-    t.detach();
+    thread_read_ = std::thread(&GlWid::ThreadRead, this);
 }
 
 void GlWid::paintGL()
@@ -371,16 +434,33 @@ void GlWid::paintGL()
     glLoadIdentity();
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     
-    gluLookAt(0, 0, distance, 0, 0, 500.0, 0, 1, 0);
-//     // 	printf("distance: %f \n", distance);
-    glRotatef(xangle, 1.0f, 0.0f, 0.0f);    //绕X轴旋转
-    glRotatef(yangle, 0.0f, 1.0f, 0.0f);    //绕Y轴旋转
-    glRotatef(zangle, 0.0f, 0.0f, 1.0f);    //绕Z轴旋转
+    if (is_360_)
+    {
+        if (is_360_)
+        {
+            glViewport(0, 0, (GLsizei)width(), (GLsizei)height());
+            glMatrixMode(GL_PROJECTION);
+            glLoadIdentity();
+            gluPerspective(120, (GLfloat)width() / height(), 1.0f, 1000.0f);    //设置投影矩阵，角度
+            glMatrixMode(GL_MODELVIEW);
+            glLoadIdentity();
+        }
+
+
+        gluLookAt(0, 0, distance, 0, 0, 500.0, 0, 1, 0);
+        //     // 	printf("distance: %f \n", distance);
+        glRotatef(xangle, 1.0f, 0.0f, 0.0f);    //绕X轴旋转
+        glRotatef(yangle, 0.0f, 1.0f, 0.0f);    //绕Y轴旋转
+        glRotatef(zangle, 0.0f, 0.0f, 1.0f);    //绕Z轴旋转
+    }
 
 //     EnterCriticalSection(&frame_queue.cs);
     frame_queue.mutex.lock();
 
-    printf("display size = %d \n", frame_queue.size);
+    int frame_w = 0;
+    int frame_h = 0;
+
+//     printf("display size = %d \n", frame_queue.size);
     if (frame_queue.size > 0)
     {
         Vid_Frame *vp = &frame_queue.queue[frame_queue.front];
@@ -390,6 +470,9 @@ void GlWid::paintGL()
 
         frame_queue.size--;
         frame_queue.front = (frame_queue.front + 1) % MAXSIZE;
+
+        frame_w = vp->width;
+        frame_h = vp->height;
     }
 
 //     LeaveCriticalSection(&frame_queue.cs);
@@ -405,21 +488,45 @@ void GlWid::paintGL()
 //     cv::Mat image = cv::imread("5.png", 1);
 //     glTexImage2D(GL_TEXTURE_2D, 0, 3, image.cols, image.rows, 0, GL_BGR_EXT, GL_UNSIGNED_BYTE, image.data);
 
+    if (is_360_)
+    {
 
 
-    //glColor3f(1.0, 0.0, 0.0);
-    glEnableClientState(GL_VERTEX_ARRAY);
-    glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+        //glColor3f(1.0, 0.0, 0.0);
+        glEnableClientState(GL_VERTEX_ARRAY);
+        glEnableClientState(GL_TEXTURE_COORD_ARRAY);
 
-    glVertexPointer(3, GL_FLOAT, 0, verticals);
-    glTexCoordPointer(2, GL_FLOAT, 0, UV_TEX_VERTEX);
-    glPushMatrix();
-    glDrawArrays(GL_TRIANGLES, 0, (180 / cap_H) * (360 / cap_W) * 6);
+        glVertexPointer(3, GL_FLOAT, 0, verticals);
+        glTexCoordPointer(2, GL_FLOAT, 0, UV_TEX_VERTEX);
 
-    glPopMatrix();
-    glDisableClientState(GL_TEXTURE_COORD_ARRAY);
-    glDisableClientState(GL_VERTEX_ARRAY);  // disable vertex arrays
+        glPushMatrix();
+        glDrawArrays(GL_TRIANGLES, 0, (180 / cap_H) * (360 / cap_W) * 6);
 
+        glPopMatrix();
+        glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+        glDisableClientState(GL_VERTEX_ARRAY);  // disable vertex arrays
+    }
+    else
+    {
+        const GLfloat bgTextureVertices[] = { 0, 0, frame_w, 0, 0, frame_h, frame_w, frame_h };
+        const GLfloat bgTextureCoords[] = { 1, 0, 1, 1, 0, 0, 0, 1 };
+        const GLfloat proj[] = { 0, -2.f / frame_w, 0, 0, -2.f / frame_h, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1 };
+
+        glMatrixMode(GL_PROJECTION);
+        glLoadMatrixf(proj);
+        glMatrixMode(GL_MODELVIEW);
+        glLoadIdentity();
+
+        glEnableClientState(GL_VERTEX_ARRAY);
+        glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+        glVertexPointer(2, GL_FLOAT, 0, bgTextureVertices);
+        glTexCoordPointer(2, GL_FLOAT, 0, bgTextureCoords);
+        glColor4f(1, 1, 1, 1);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+        glDisableClientState(GL_VERTEX_ARRAY);  // disable vertex arrays
+    }
+   
     glFlush();
 
 //     av_usleep(25000);
@@ -432,7 +539,8 @@ void GlWid::resizeGL(int w, int h)
     glLoadIdentity();
     //glOrtho(-250.0, 250, -250.0, 250, -500, 500);
     //glFrustum(-250.0, 250, -250.0, 250, -5, -500);
-    gluPerspective(120, (GLfloat)w / h, 1.0f, 1000.0f);    //设置投影矩阵
+    gluPerspective(120, (GLfloat)w / h, 1.0f, 1000.0f);    //设置投影矩阵，角度
+//     gluPerspective(45, (GLfloat)w / h, 1.0f, 1000.0f);    //设置投影矩阵，角度
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 }
@@ -464,7 +572,11 @@ void GlWid::mouseMoveEvent(QMouseEvent *event)
         xangle += ((y - cy) * offset);
     }
 
-    update();
+    if (is_360_)
+    {
+        update();
+    }
+
 
     //保存好当前拖放后光标坐标点
     cx = x;
@@ -483,5 +595,9 @@ void GlWid::wheelEvent(QWheelEvent *event)
         // 当滚轮向使用者方向旋转时,进行缩小
         distance += 8;
     }
-    update();
+
+    if (is_360_)
+    {
+        update();
+    }
 }

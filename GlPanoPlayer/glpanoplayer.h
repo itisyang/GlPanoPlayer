@@ -10,6 +10,9 @@ class GlPanoPlayer : public QMainWindow
 public:
     GlPanoPlayer(QWidget *parent = Q_NULLPTR);
 
+private slots:
+    void on_checkbox_360_stateChanged(int state);
+    void on_horizontalslider_fovy_valueChanged(int value);
 private:
     Ui::GlPanoPlayerClass ui;
 };
